@@ -26,14 +26,48 @@ static int getgrbm_amdgpu(uint32_t *out) {
 					0xffffffff, 0, out);
 }
 
-static int getsrbm_amdgpu(uint32_t *out) {
-	return amdgpu_read_mm_registers(amdgpu_dev, SRBM_STATUS / 4, 1,
-					0xffffffff, 0, out);
+static int getvideo_amdgpu_uvdvce(uint32_t *decode, uint32_t *encode) {
+	int result = amdgpu_read_mm_registers(amdgpu_dev, SRBM_STATUS / 4, 1,
+										  0xffffffff, 0, decode);
+	if (!result) {
+		return result;
+	}
+	if (bits.vce0) {
+		result = amdgpu_read_mm_registers(amdgpu_dev, SRBM_STATUS2 / 4, 1,
+										0xffffffff, 0, encode);
+	}
+	return result;
 }
 
-static int getsrbm2_amdgpu(uint32_t *out) {
-	return amdgpu_read_mm_registers(amdgpu_dev, SRBM_STATUS2 / 4, 1,
-					0xffffffff, 0, out);
+static int getvideo_amdgpu_vcn(uint32_t *decode, uint32_t *encode) {
+	uint32_t value = 0;
+	int result = amdgpu_read_mm_registers(amdgpu_dev, (bits.vcn) / 4, 1,
+														 0xffffffff, 0, &value);
+	// TODO  debug
+	uint32_t data[255];
+	memset(data, 0, sizeof(data));
+	for (int i = 0; i < sizeof(data) / sizeof(uint32_t); ++i) {
+		amdgpu_read_mm_registers(amdgpu_dev, ((bits.vcn / 4) + i), 1,
+								 0xffffffff, 0, data + i);
+	}
+	printf("%d %d\n", value);
+	if (!result) {
+		return result;
+	}
+//	if (value & 1) {
+//		// Filter out 0xDEADBEEF
+//		value = 0;
+//	}
+	*decode = *encode = value;
+	return 0;
+}
+
+static int getvideo_amdgpu_stub(uint32_t *decode, uint32_t *encode) {
+	if (!bits.uvd) {
+		return -1;
+	}
+	getvideo = bits.vcn ? getvideo_amdgpu_vcn : getvideo_amdgpu_uvdvce;
+	return getvideo(decode, encode);
 }
 
 static int getvram_amdgpu(uint64_t *out) {
@@ -71,8 +105,7 @@ void init_amdgpu(int fd) {
 
 	if (!(ret = getgrbm_amdgpu(&out32))) {
 		getgrbm = getgrbm_amdgpu;
-		getsrbm = getsrbm_amdgpu;
-		getsrbm2 = getsrbm2_amdgpu;
+		getvideo = getvideo_amdgpu_stub;
 	} else
 		drmError(ret, _("Failed to get GPU usage"));
 

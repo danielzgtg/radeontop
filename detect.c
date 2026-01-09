@@ -32,8 +32,7 @@ static const void *srbm_area;
 
 // function pointers to the right backend
 int (*getgrbm)(uint32_t *out);
-int (*getsrbm)(uint32_t *out);
-int (*getsrbm2)(uint32_t *out);
+int (*getvideo)(uint32_t *decode, uint32_t *encode);
 int (*getvram)(uint64_t *out);
 int (*getgtt)(uint64_t *out);
 int (*getsclk)(uint32_t *out);
@@ -78,13 +77,14 @@ static int getgrbm_pci(uint32_t *out) {
 	return 0;
 }
 
-static int getsrbm_pci(uint32_t *out) {
-	*out = *(uint32_t *)((const char *) srbm_area + SRBM_STATUS);
-	return 0;
-}
-
-static int getsrbm2_pci(uint32_t *out) {
-	*out = *(uint32_t *)((const char *) srbm_area + SRBM_STATUS2);
+static int getvideo_pci(uint32_t *decode, uint32_t *encode) {
+	if (!bits.uvd || bits.vcn) {
+		return -1;
+	}
+	*decode = *(uint32_t *)((const char *) srbm_area + SRBM_STATUS);
+	if (bits.vce0) {
+		*encode = *(uint32_t *)((const char *) srbm_area + SRBM_STATUS2);
+	}
 	return 0;
 }
 
@@ -109,8 +109,7 @@ static void open_pci(struct pci_device *gpu_device) {
 	if (srbm_area == MAP_FAILED) die(_("mmap failed"));
 
 	getgrbm = getgrbm_pci;
-	getsrbm = getsrbm_pci;
-	getsrbm2 = getsrbm2_pci;
+	getvideo = getvideo_pci;
 }
 
 static void cleanup_pci() {
@@ -260,13 +259,14 @@ static void device_info_drm(int fd, short *bus, unsigned int *device_id) {
 // do-nothing backend used as fallback
 #define UNUSED(v)	(void) v
 static int getuint32_null(uint32_t *out) { UNUSED(out); return -1; }
+static int getuint32_uint32_null(uint32_t *out1, uint32_t *out2) { UNUSED(out1); UNUSED(out2); return -1; }
 static int getuint64_null(uint64_t *out) { UNUSED(out); return -1; }
 
 void init_pci(const char *path, short *bus, unsigned int *device_id, const unsigned char forcemem) {
 	short device_bus = -1;
 	int err = 1;
 	getgrbm = getsclk = getmclk = getuint32_null;
-	getsrbm = getsrbm2 = getuint32_null;
+	getvideo = getuint32_uint32_null;
 	getvram = getgtt = getuint64_null;
 
 	if (path) {
@@ -371,10 +371,17 @@ void initbits(int fam) {
 		bits.smx = 0;
 	}
 
-	if (fam >= RV610 && fam < VEGAM) {
-		bits.uvd = (1U << 19);
-		if (fam >= CAYMAN) {
-			bits.vce0 = (1U << 7);
+	if (fam >= RV610) {
+		bits.vcn = 0;
+		if (fam < VEGAM) {
+			bits.uvd = (1U << 19);
+			if (fam >= CAYMAN) {
+				bits.vce0 = (1U << 7);
+			}
+		} else if ((fam >= SIENNA_CICHLID && fam <= DIMGREY_CAVEFISH) || fam == BEIGE_GOBY) {
+			bits.vcn = UVD3_STATUS;
+			bits.uvd = 0x20; // 0x26 during decode
+			bits.vce0 = 0x40; // 0x40 during encode
 		}
 	}
 }

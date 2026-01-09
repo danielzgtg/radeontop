@@ -41,10 +41,8 @@ static void *collector(void *arg) {
 	while (1) {
 		unsigned int stat;
 		getgrbm(&stat);
-		unsigned int uvd;
-		if (bits.uvd) getsrbm(&uvd);
-		unsigned int vce;
-		if (bits.vce0) getsrbm2(&vce);
+		unsigned int decode, encode;
+		getvideo(&decode, &encode);
 
 		memset(&history[cur], 0, sizeof(struct bits_t));
 
@@ -62,8 +60,8 @@ static void *collector(void *arg) {
 		if (stat & bits.db) history[cur].db = 1;
 		if (stat & bits.cr) history[cur].cr = 1;
 		if (stat & bits.cb) history[cur].cb = 1;
-		if (uvd & bits.uvd) history[cur].uvd = 1;
-		if (vce & bits.vce0) history[cur].vce0 = 1;
+		if (encode & bits.uvd) history[cur].uvd = 1;
+		if (decode & bits.vce0) history[cur].vce0 = 1;
 		getsclk(&history[cur].sclk);
 		getmclk(&history[cur].mclk);
 
